@@ -23,6 +23,24 @@ function transformCSSResult (cssCode, asOption) {
 
 // :::::: IMPORT METHODS
 
+export async function importCSV (path, options = {}) {
+  const text = await fetchText(path);
+  if (options.as === 'raw') return text;
+
+  const PAPA = (await import('https://esm.sh/papaparse@5.4.1')).default;
+  const ext  = path.split('.').pop().toLowerCase();
+
+  const config = {
+    header        : options.as !== 'array', // Default: true (gibt Objekte zurück), bei 'array' false
+    delimiter     : ext === 'tsv' ? '\t' : undefined, // auto TSV detection
+    dynamicTyping : true, // Konvertiert Zahlen/Booleans automatisch aus dem String
+    ...options.csvOptions
+  };
+
+  const result = PAPA.parse(text, config);
+  return result.data;
+}
+
 export async function importJSON5 (path, options = {}) {
   const text = await fetchText(path);
   if (options.as === 'raw') return text;
@@ -48,6 +66,28 @@ export async function importLESS (path, options = {}) {
   
   return transformCSSResult(output.css, options.as);
 }
+
+export async function importMD (path, options = {}) {
+  const text = await fetchText(path);
+  if (options.as === 'raw') return text;
+
+  let html;
+  if (options.compiler) { // custom compiler
+    html = options.compiler(text);
+  } else {
+    const { marked } = await import('https://esm.sh/marked@11.1.1');
+    html = await marked.parse(text);
+  }
+
+  if (options.as === 'element') {
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    return div;
+  }
+
+  return html; // default: 'html' (String)
+}
+
 
 export async function importSASS (path, options = {}) {
   const text = await fetchText(path);
@@ -78,6 +118,36 @@ export async function importTOML (path, options = {}) {
   return parse(text);
 }
 
+export async function importWASM (path, options = {}) {
+  const response = await fetch(path); // needs binary data not text
+  if (!response.ok) throw new Error(`[importeur] Error while loading WASM "${path}": ${response.status}`);
+  
+  if (options.as === 'buffer') return response.arrayBuffer();
+  if (options.as === 'module') return WebAssembly.compileStreaming(response);
+  // default: 'instance' (Gibt direkt die ausführbaren JS-Exports zurück)
+  // options.importObject kann übergeben werden, falls das WASM-Modul Imports vom Host benötigt
+  const { instance } = await WebAssembly.instantiateStreaming(response, options.importObject || {});
+  return instance.exports;
+}
+
+export async function importXML (path, options = {}) {
+  const text = await fetchText(path);
+  if (options.as === 'raw') return text;
+
+  if (options.as === 'document') {
+    const parser = new DOMParser();
+    return parser.parseFromString(text, 'text/xml');
+  }
+
+  const { XMLParser } = await import('https://esm.sh/fast-xml-parser@4.3.2');
+  const xmlParser     = new XMLParser(options.xmlOptions || {});
+  const jsObj         = xmlParser.parse(text);
+
+  if (options.as === 'json') return JSON.stringify(jsObj);
+
+  return jsObj; // default: js-object
+}
+
 export async function importYAML (path, options = {}) {
   const text = await fetchText(path);
   if (options.as === 'raw') return text;
@@ -89,12 +159,17 @@ export async function importYAML (path, options = {}) {
 // :::::: MAIN METHOD
 
 const extensionMap = {
+  csv   : importCSV,
   json5 : importJSON5,
   jsonc : importJSONC,
   less  : importLESS,
+  md    : importMD,
   sass  : importSASS,
   scss  : importSCSS,
   toml  : importTOML,
+  tsv   : importCSV,
+  wasm  : importWASM,
+  xml   : importXML,
   yaml  : importYAML,
   yml   : importYAML, // Alias für .yml
 };
