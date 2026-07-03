@@ -1,6 +1,10 @@
-# importeur
+# importeur.js
+
+## About
 
 Import several file-extensions directly in the web/browser environment.
+
+## Features
 
 - used libraries/compilers are imported dynamically (only loaded if used at all)
 - fully tree-shakable
