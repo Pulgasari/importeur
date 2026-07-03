@@ -1,40 +1,88 @@
 // importeur/index.js
 
-export async function importJSON5 (path) {
-  const JSON5    = (await import('https://unpkg.com/json5@2/dist/index.min.mjs')).default;
+// :::::: HELPERS
+
+async function fetchText (path) {
   const response = await fetch(path);
-  const text     = await response.text();
-  return JSON5.parse(text);
+  if (!response.ok) throw new Error(`[importeur] Error while loading "${path}": ${response.status} ${response.statusText}`);
+  return response.text();
 }
 
-export async function importJSONC (path) {
-  const response = await fetch(path);
-  const text     = await response.text();
-  const json     = text.replace(/\\"|"(?:\\"|[^"])*"|(\/\/.*|\/\*[\s\S]*?\*\/)/g, (m, g) => g ? "" : m);
-  return JSON.parse(json);
-}
-
-export async function importSCSS (path) {
-  const SASS     = (await import('https://esm.sh/sass@1.70.0')).default;
-  const response = await fetch(path);
-  const text     = await response.text();
-  const css      = SASS.compileString(text).css;
-  const sheet    = new CSSStyleSheet();
-  sheet.replaceSync(css);
+function transformCSSResult (cssCode, asOption) {
+  if (asOption === 'css') return cssCode;
+  if (asOption === 'style') {
+    const element = document.createElement('style');
+    element.textContent = cssCode;
+    return element;
+  }
+  // Default: 'sheet' (CSSStyleSheet)
+  const sheet = new CSSStyleSheet();
+  sheet.replaceSync(cssCode);
   return sheet;
 }
 
-export async function importTOML (path) {
+// :::::: IMPORT METHODS
+
+export async function importJSON5 (path, options = {}) {
+  const text = await fetchText(path);
+  if (options.as === 'raw') return text;
+  
+  const JSON5    = (await import('https://unpkg.com/json5@2/dist/index.min.mjs')).default;
+  return JSON5.parse(text);
+}
+
+export async function importJSONC (path, options = {}) {
+  const text = await fetchText(path);
+  if (options.as === 'raw') return text;
+  
+  const json = text.replace(/\\"|"(?:\\"|[^"])*"|(\/\/.*|\/\*[\s\S]*?\*\/)/g, (m, g) => g ? "" : m);
+  return JSON.parse(json);
+}
+
+export async function importLESS (path, options = {}) {
+  const text = await fetchText(path);
+  if (options.as === 'raw') return text;
+
+  const LESS   = (await import('https://esm.sh/less@4.2.0')).default;
+  const output = await LESS.render(text);
+  
+  return transformCSSResult(output.css, options.as);
+}
+
+export async function importSASS (path, options = {}) {
+  const text = await fetchText(path);
+  if (options.as === 'raw') return text;
+
+  const SASS = (await import('https://esm.sh/sass@1.70.0')).default;
+  const css  = SASS.compileString(text, { syntax: 'indented' }).css;
+
+  return transformCSSResult(css, options.as);
+}
+
+export async function importSCSS (path, options = {}) {
+  const text = await fetchText(path);
+  if (options.as === 'raw') return text;
+
+  const SASS = (await import('https://esm.sh/sass@1.70.0')).default;
+  const css  = SASS.compileString(text, { syntax: 'scss' }).css;
+
+  return transformCSSResult(css, options.as);
+}
+
+
+export async function importTOML (path, options = {}) {
+  const text = await fetchText(path);
+  if (options.as === 'raw') return text;
+  
   const { parse } = await import('https://esm.sh/smol-toml@1.1.4');
-  const response = await fetch(path);
-  const text = await response.text();
   return parse(text);
 }
 
-export async function importYAML (path) {
+export async function importYAML (path, options = {}) {
+  const text = await fetchText(path);
+  if (options.as === 'raw') return text;
+  
   const YAML = (await import('https://esm.sh/yaml@2.3.4')).default;
-  const response = await fetch(path);
-  const text = await response.text();
   return YAML.parse(text);
 }
 
@@ -43,6 +91,8 @@ export async function importYAML (path) {
 const extensionMap = {
   json5 : importJSON5,
   jsonc : importJSONC,
+  less  : importLESS,
+  sass  : importSASS,
   scss  : importSCSS,
   toml  : importTOML,
   yaml  : importYAML,
