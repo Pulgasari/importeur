@@ -57,6 +57,22 @@ export async function importJSONC (path, options = {}) {
   return JSON.parse(json);
 }
 
+export async function importJSX (path, options = {}) {
+  const text = await fetchText(path);
+  if (options.as === 'raw') return text;
+  
+  const { transform } = await import('https://esm.sh/sucrase@3.35.0');
+  const jsCode = transform(text, { transforms: ['jsx'] }).code;
+  if (options.as === 'code') return jsCode;
+
+  // transform js-string to temporary blob-url so the browser could call it natively
+  const blob    = new Blob([jsCode], { type: 'application/javascript' });
+  const blobUrl = URL.createObjectURL(blob);
+  const module  = await import(blobUrl);
+  URL.revokeObjectURL(blobUrl);
+  return module;
+}
+
 export async function importLESS (path, options = {}) {
   const text = await fetchText(path);
   if (options.as === 'raw') return text;
@@ -118,6 +134,25 @@ export async function importTOML (path, options = {}) {
   return parse(text);
 }
 
+export async function importTS (path, options = {}) {
+  const text = await fetchText(path);
+  if (options.as === 'raw') return text;
+
+  const { transform } = await import('https://esm.sh/sucrase@3.35.0');
+  const isJSX      = path.endsWith('x'); 
+  const transforms = isJSX ? ['typescript', 'jsx'] : ['typescript'];
+  const jsCode     = transform(text, { transforms }).code;
+  if (options.as === 'code') return jsCode;
+
+  // transform js-string to temporary blob-url so the browser could call it natively
+  const blob    = new Blob([jsCode], { type: 'application/javascript' });
+  const blobUrl = URL.createObjectURL(blob);
+  const module  = await import(blobUrl);
+  URL.revokeObjectURL(blobUrl); // free memory
+  return module;
+}
+export const importTSX = importTS;
+
 export async function importWASM (path, options = {}) {
   const response = await fetch(path); // needs binary data not text
   if (!response.ok) throw new Error(`[importeur] Error while loading WASM "${path}": ${response.status}`);
@@ -162,11 +197,14 @@ const extensionMap = {
   csv   : importCSV,
   json5 : importJSON5,
   jsonc : importJSONC,
+  jsx   : importJSX,
   less  : importLESS,
   md    : importMD,
   sass  : importSASS,
   scss  : importSCSS,
   toml  : importTOML,
+  ts    : importTS,
+  tsx   : importTSX,
   tsv   : importCSV,
   wasm  : importWASM,
   xml   : importXML,
@@ -174,12 +212,12 @@ const extensionMap = {
   yml   : importYAML, // Alias für .yml
 };
 
-export async function importeur (path) {
+export async function importeur (path, options = {}) {
   const ext     = path.split('.').pop().toLowerCase();
   const handler = extensionMap[ext];
   if (!handler) throw new Error(`[importeur] The fileExtension .${ext} is not supported.`);
   //
-  return handler(path);
+  return handler(path, options);
 };
 
 export default importeur;
